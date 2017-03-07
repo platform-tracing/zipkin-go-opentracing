@@ -29,6 +29,7 @@ type Span interface {
 type spanImpl struct {
 	tracer     *tracerImpl
 	event      func(SpanEvent)
+	Observer   opentracing.SpanObserver
 	sync.Mutex // protects the fields below
 	raw        RawSpan
 	// The number of logs dropped because of MaxLogsPerSpan.
@@ -66,6 +67,7 @@ func (s *spanImpl) SetOperationName(operationName string) opentracing.Span {
 	s.Lock()
 	defer s.Unlock()
 	s.raw.Operation = operationName
+	s.Observer.OnSetOperationName(operationName)
 	return s
 }
 
@@ -91,6 +93,7 @@ func (s *spanImpl) SetTag(key string, value interface{}) opentracing.Span {
 		s.raw.Tags = opentracing.Tags{}
 	}
 	s.raw.Tags[key] = value
+	s.Observer.OnSetTag(key, value)
 	return s
 }
 
@@ -187,8 +190,11 @@ func (s *spanImpl) FinishWithOptions(opts opentracing.FinishOptions) {
 	finishTime := opts.FinishTime
 	if finishTime.IsZero() {
 		finishTime = time.Now()
+		opts.FinishTime = finishTime
 	}
 	duration := finishTime.Sub(s.raw.Start)
+
+	s.Observer.OnFinish(opts)
 
 	s.Lock()
 	defer s.Unlock()
